@@ -122,7 +122,7 @@ LANGUAGES = {
 # ─────────────────────────────────────────────
 #  GEMINI API  (free tier — 1500 req/day)
 # ─────────────────────────────────────────────
-GEMINI_MODEL       = "gemini-1.5-flash"
+GEMINI_MODEL       = "gemini-2.0-flash"
 GEMINI_BASE        = "https://generativelanguage.googleapis.com/v1beta/models"
 
 def get_api_key():
