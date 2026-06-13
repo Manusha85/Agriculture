@@ -120,62 +120,66 @@ LANGUAGES = {
 }
 
 # ─────────────────────────────────────────────
-#  ANTHROPIC API
+#  GEMINI API  (free tier — 1500 req/day)
 # ─────────────────────────────────────────────
-ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-MODEL         = "claude-sonnet-4-6"
+GEMINI_MODEL       = "gemini-1.5-flash"
+GEMINI_BASE        = "https://generativelanguage.googleapis.com/v1beta/models"
 
 def get_api_key():
-    # Try Streamlit secrets first (for cloud), then env var (local)
     try:
-        return st.secrets["ANTHROPIC_API_KEY"]
+        return st.secrets["GEMINI_API_KEY"]
     except Exception:
-        return os.environ.get("ANTHROPIC_API_KEY", "")
+        return os.environ.get("GEMINI_API_KEY", "")
 
-def call_claude(messages, system_prompt="", image_bytes=None):
+def call_gemini(messages, system_prompt="", image_bytes=None):
     api_key = get_api_key()
     if not api_key:
-        return "⚠️ No API key found. Add ANTHROPIC_API_KEY to Streamlit secrets."
+        return "⚠️ No API key. Add GEMINI_API_KEY to Streamlit secrets."
 
-    headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-    }
+    url = f"{GEMINI_BASE}/{GEMINI_MODEL}:generateContent?key={api_key}"
 
-    # Build message list
-    api_messages = []
+    parts = []
+
+    # System prompt as first text part
+    if system_prompt:
+        parts.append({"text": system_prompt + "\n\n"})
+
+    # Add conversation history as text
     for m in messages:
-        api_messages.append({"role": m["role"], "content": m["content"]})
+        role_label = "Farmer" if m["role"] == "user" else "Assistant"
+        parts.append({"text": f"{role_label}: {m['content']}\n"})
 
-    # If image provided, add as vision message
+    # Add image if provided
     if image_bytes is not None:
         img_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        api_messages.append({
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": img_b64}},
-                {"type": "text",  "text": system_prompt}
-            ]
+        parts.append({
+            "inline_data": {
+                "mime_type": "image/jpeg",
+                "data": img_b64
+            }
         })
-        system_prompt = ""  # already in message
 
     payload = {
-        "model": MODEL,
-        "max_tokens": 1024,
-        "messages": api_messages,
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 1024,
+        }
     }
-    if system_prompt:
-        payload["system"] = system_prompt
 
     try:
-        r = requests.post(ANTHROPIC_URL, headers=headers, json=payload, timeout=60)
-        if r.status_code == 401:
-            return "⚠️ Invalid API key. Check your ANTHROPIC_API_KEY in Streamlit secrets."
+        r = requests.post(url, json=payload, timeout=60)
+        if r.status_code == 400:
+            return f"⚠️ Bad request: {r.json().get('error',{}).get('message','Unknown error')}"
+        if r.status_code == 403:
+            return "⚠️ Invalid API key. Get free key at aistudio.google.com"
         if r.status_code == 429:
             return "⚠️ Rate limit hit. Please wait a moment and try again."
         r.raise_for_status()
-        return r.json()["content"][0]["text"]
+        candidates = r.json().get("candidates", [])
+        if candidates:
+            return candidates[0]["content"]["parts"][0]["text"]
+        return "⚠️ Empty response from Gemini."
     except Exception as e:
         return f"⚠️ API error: {e}"
 
@@ -238,7 +242,7 @@ def market_agent(crop):
 # ─────────────────────────────────────────────
 #  AI AGENTS using Claude
 # ─────────────────────────────────────────────
-def vision_agent_claude(image_bytes, farmer_name, village, crop, lang_code):
+def vision_agent_ai(image_bytes, farmer_name, village, crop, lang_code):
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         img.thumbnail((800, 800), Image.LANCZOS)
@@ -262,9 +266,9 @@ Analyze this crop image and write a complete structured report:
 
 Be specific. Use simple language a farmer can understand."""
 
-    return call_claude([], system_prompt=prompt, image_bytes=resized)
+    return call_gemini([], system_prompt=prompt, image_bytes=resized)
 
-def orchestrator_claude(vision, weather, soil, market, name, crop, lang_code):
+def orchestrator_ai(vision, weather, soil, market, name, crop, lang_code):
     prompt = f"""You are the CropSense Orchestrator — the Master Brain combining reports from 4 specialist agents.
 Respond in language code: {lang_code}. Be practical and use simple farmer-friendly language.
 
@@ -288,16 +292,16 @@ Write a COMBINED FARM ADVISORY for farmer {name} growing {crop}:
 
 ✅ **OVERALL FARM HEALTH:** [Good / Moderate / Needs Attention] — one sentence reason."""
 
-    return call_claude([{"role":"user","content":prompt}])
+    return call_gemini([{"role":"user","content":prompt}])
 
-def chat_agent_claude(messages, name, village, crop, lang_code, weather, soil, market):
+def chat_agent_ai(messages, name, village, crop, lang_code, weather, soil, market):
     system = f"""You are CropSense AI, a multi-agent farming assistant for {name} from {village}, growing {crop}.
 You have live sensor data:
 - Weather: avg {weather['avg_temp']}°C, rain expected on: {weather['rain_days'] or 'none this week'}
 - Soil: N={soil['n']} P={soil['p']} K={soil['k']} Moisture={soil['moisture']}% pH={soil['ph']}
 - Market: {crop} price ₹{market['price']}/quintal, trend={market['trend']}
 Respond in language: {lang_code}. Be concise, practical. End with 1-2 actionable tips."""
-    return call_claude(messages, system_prompt=system)
+    return call_gemini(messages, system_prompt=system)
 
 # ─────────────────────────────────────────────
 #  PAGE CONFIG & CSS
@@ -567,7 +571,7 @@ tab_upload, tab_photo = st.tabs([L["upload_tab"], L["photo_tab"]])
 def run_vision_and_orchestrator(img_bytes, source_label):
     with st.spinner(L["analyzing"]):
         ctx    = f"{farmer_name}, {farmer_village}, {farmer_crop}"
-        result = vision_agent_claude(img_bytes, farmer_name, farmer_village, farmer_crop, L["code"])
+        result = vision_agent_ai(img_bytes, farmer_name, farmer_village, farmer_crop, L["code"])
         st.session_state.last_vision = result
 
     st.markdown(f'<div class="agent-card vision"><div class="agent-title">👁️ Vision Agent Report</div>{result.replace(chr(10),"<br>")}</div>', unsafe_allow_html=True)
@@ -576,7 +580,7 @@ def run_vision_and_orchestrator(img_bytes, source_label):
 
     st.markdown('<div class="section-title">🧠 Orchestrator — Combined Farm Advisory</div>', unsafe_allow_html=True)
     with st.spinner("🧠 Orchestrator combining all agent reports..."):
-        summary = orchestrator_claude(result, W, S, M, farmer_name, farmer_crop, L["code"])
+        summary = orchestrator_ai(result, W, S, M, farmer_name, farmer_crop, L["code"])
     st.markdown(f'<div class="agent-card brain"><div class="agent-title">🧠 Master Brain Advisory</div>{summary.replace(chr(10),"<br>")}</div>', unsafe_allow_html=True)
     st.session_state.messages.append({"role":"assistant", "content": f"🧠 **Orchestrator:**\n\n{summary}"})
 
@@ -599,7 +603,7 @@ with tab_photo:
 # ── Full Advisory button ──
 if st.button("🧠 Get Full Farm Advisory (All Agents)", use_container_width=True, type="primary"):
     with st.spinner("🧠 Orchestrator working..."):
-        summary = orchestrator_claude(st.session_state.last_vision, W, S, M, farmer_name, farmer_crop, L["code"])
+        summary = orchestrator_ai(st.session_state.last_vision, W, S, M, farmer_name, farmer_crop, L["code"])
     st.markdown(f'<div class="agent-card brain"><div class="agent-title">🧠 Master Brain Advisory</div>{summary.replace(chr(10),"<br>")}</div>', unsafe_allow_html=True)
     st.session_state.messages.append({"role":"assistant","content":f"🧠 **Orchestrator:**\n\n{summary}"})
 
@@ -633,6 +637,6 @@ with cc:
 if send and user_input.strip():
     st.session_state.messages.append({"role":"user","content":user_input.strip()})
     with st.spinner("🌱 Thinking..."):
-        reply = chat_agent_claude(st.session_state.messages, farmer_name, farmer_village, farmer_crop, L["code"], W, S, M)
+        reply = chat_agent_ai(st.session_state.messages, farmer_name, farmer_village, farmer_crop, L["code"], W, S, M)
     st.session_state.messages.append({"role":"assistant","content":reply})
     st.rerun()
