@@ -6,6 +6,7 @@ import os
 from PIL import Image
 import io
 import random
+import time
 from datetime import datetime, timedelta
 
 # ─────────────────────────────────────────────
@@ -167,21 +168,25 @@ def call_gemini(messages, system_prompt="", image_bytes=None):
         }
     }
 
-    try:
-        r = requests.post(url, json=payload, timeout=60)
-        if r.status_code == 400:
-            return f"⚠️ Bad request: {r.json().get('error',{}).get('message','Unknown error')}"
-        if r.status_code == 403:
-            return "⚠️ Invalid API key. Get free key at aistudio.google.com"
-        if r.status_code == 429:
-            return "⚠️ Rate limit hit. Please wait a moment and try again."
-        r.raise_for_status()
-        candidates = r.json().get("candidates", [])
-        if candidates:
-            return candidates[0]["content"]["parts"][0]["text"]
-        return "⚠️ Empty response from Gemini."
-    except Exception as e:
-        return f"⚠️ API error: {e}"
+    for attempt in range(3):
+        try:
+            r = requests.post(url, json=payload, timeout=60)
+            if r.status_code == 400:
+                return f"⚠️ Bad request: {r.json().get('error',{}).get('message','Unknown error')}"
+            if r.status_code == 403:
+                return "⚠️ Invalid API key. Get free key at aistudio.google.com"
+            if r.status_code == 429:
+                wait = 5 + attempt * 5
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            candidates = r.json().get("candidates", [])
+            if candidates:
+                return candidates[0]["content"]["parts"][0]["text"]
+            return "⚠️ Empty response from Gemini."
+        except Exception as e:
+            return f"⚠️ API error: {e}"
+    return "⚠️ Rate limit: Gemini free tier is 15 req/min. Please wait 30 seconds and try again."
 
 # ─────────────────────────────────────────────
 #  MOCK AGENTS
@@ -579,6 +584,8 @@ def run_vision_and_orchestrator(img_bytes, source_label):
     st.session_state.messages.append({"role":"assistant", "content": f"👁️ **Vision Agent:**\n\n{result}"})
 
     st.markdown('<div class="section-title">🧠 Orchestrator — Combined Farm Advisory</div>', unsafe_allow_html=True)
+    with st.spinner("🧠 Waiting 6s before Orchestrator (Gemini rate limit)..."):
+        time.sleep(6)
     with st.spinner("🧠 Orchestrator combining all agent reports..."):
         summary = orchestrator_ai(result, W, S, M, farmer_name, farmer_crop, L["code"])
     st.markdown(f'<div class="agent-card brain"><div class="agent-title">🧠 Master Brain Advisory</div>{summary.replace(chr(10),"<br>")}</div>', unsafe_allow_html=True)
