@@ -124,7 +124,7 @@ LANGUAGES = {
 #  GROQ API  (free — ultra fast llama3)
 # ─────────────────────────────────────────────
 GROQ_URL          = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_CHAT_MODEL   = "llama3-70b-8192"
+GROQ_CHAT_MODEL   = "llama-3.3-70b-versatile"
 GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 def get_api_key():
