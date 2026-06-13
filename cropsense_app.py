@@ -121,72 +121,71 @@ LANGUAGES = {
 }
 
 # ─────────────────────────────────────────────
-#  GEMINI API  (free tier — 1500 req/day)
+#  GROQ API  (free — ultra fast llama3)
 # ─────────────────────────────────────────────
-GEMINI_MODEL       = "gemini-2.0-flash"
-GEMINI_BASE        = "https://generativelanguage.googleapis.com/v1beta/models"
+GROQ_URL          = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_CHAT_MODEL   = "llama3-70b-8192"
+GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 def get_api_key():
     try:
-        return st.secrets["GEMINI_API_KEY"]
+        return st.secrets["GROQ_API_KEY"]
     except Exception:
-        return os.environ.get("GEMINI_API_KEY", "")
+        return os.environ.get("GROQ_API_KEY", "")
 
-def call_gemini(messages, system_prompt="", image_bytes=None):
+def call_groq(messages, system_prompt="", image_bytes=None):
     api_key = get_api_key()
     if not api_key:
-        return "⚠️ No API key. Add GEMINI_API_KEY to Streamlit secrets."
+        return "⚠️ No API key. Add GROQ_API_KEY to Streamlit secrets."
 
-    url = f"{GEMINI_BASE}/{GEMINI_MODEL}:generateContent?key={api_key}"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
 
-    parts = []
-
-    # System prompt as first text part
+    api_messages = []
     if system_prompt:
-        parts.append({"text": system_prompt + "\n\n"})
+        api_messages.append({"role": "system", "content": system_prompt})
 
-    # Add conversation history as text
-    for m in messages:
-        role_label = "Farmer" if m["role"] == "user" else "Assistant"
-        parts.append({"text": f"{role_label}: {m['content']}\n"})
-
-    # Add image if provided
     if image_bytes is not None:
+        # Vision call with image
         img_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        parts.append({
-            "inline_data": {
-                "mime_type": "image/jpeg",
-                "data": img_b64
-            }
+        api_messages.append({
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                {"type": "text", "text": system_prompt}
+            ]
         })
+        model = GROQ_VISION_MODEL
+    else:
+        for m in messages:
+            api_messages.append({"role": m["role"], "content": m["content"]})
+        model = GROQ_CHAT_MODEL
 
     payload = {
-        "contents": [{"parts": parts}],
-        "generationConfig": {
-            "temperature": 0.2,
-            "maxOutputTokens": 1024,
-        }
+        "model": model,
+        "messages": api_messages,
+        "max_tokens": 1024,
+        "temperature": 0.2,
     }
 
     for attempt in range(3):
         try:
-            r = requests.post(url, json=payload, timeout=60)
-            if r.status_code == 400:
-                return f"⚠️ Bad request: {r.json().get('error',{}).get('message','Unknown error')}"
-            if r.status_code == 403:
-                return "⚠️ Invalid API key. Get free key at aistudio.google.com"
+            r = requests.post(GROQ_URL, headers=headers, json=payload, timeout=60)
+            if r.status_code == 401:
+                return "⚠️ Invalid API key. Check GROQ_API_KEY in Streamlit secrets."
             if r.status_code == 429:
-                wait = 5 + attempt * 5
-                time.sleep(wait)
+                time.sleep(5 + attempt * 5)
                 continue
+            if r.status_code == 400:
+                err = r.json().get("error", {}).get("message", r.text[:200])
+                return f"⚠️ Bad request: {err}"
             r.raise_for_status()
-            candidates = r.json().get("candidates", [])
-            if candidates:
-                return candidates[0]["content"]["parts"][0]["text"]
-            return "⚠️ Empty response from Gemini."
+            return r.json()["choices"][0]["message"]["content"]
         except Exception as e:
             return f"⚠️ API error: {e}"
-    return "⚠️ Rate limit: Gemini free tier is 15 req/min. Please wait 30 seconds and try again."
+    return "⚠️ Rate limit hit. Please wait 30 seconds and try again."
 
 # ─────────────────────────────────────────────
 #  MOCK AGENTS
@@ -271,7 +270,7 @@ Analyze this crop image and write a complete structured report:
 
 Be specific. Use simple language a farmer can understand."""
 
-    return call_gemini([], system_prompt=prompt, image_bytes=resized)
+    return call_groq([], system_prompt=prompt, image_bytes=resized)
 
 def orchestrator_ai(vision, weather, soil, market, name, crop, lang_code):
     prompt = f"""You are the CropSense Orchestrator — the Master Brain combining reports from 4 specialist agents.
@@ -297,7 +296,7 @@ Write a COMBINED FARM ADVISORY for farmer {name} growing {crop}:
 
 ✅ **OVERALL FARM HEALTH:** [Good / Moderate / Needs Attention] — one sentence reason."""
 
-    return call_gemini([{"role":"user","content":prompt}])
+    return call_groq([{"role":"user","content":prompt}])
 
 def chat_agent_ai(messages, name, village, crop, lang_code, weather, soil, market):
     system = f"""You are CropSense AI, a multi-agent farming assistant for {name} from {village}, growing {crop}.
@@ -306,7 +305,7 @@ You have live sensor data:
 - Soil: N={soil['n']} P={soil['p']} K={soil['k']} Moisture={soil['moisture']}% pH={soil['ph']}
 - Market: {crop} price ₹{market['price']}/quintal, trend={market['trend']}
 Respond in language: {lang_code}. Be concise, practical. End with 1-2 actionable tips."""
-    return call_gemini(messages, system_prompt=system)
+    return call_groq(messages, system_prompt=system)
 
 # ─────────────────────────────────────────────
 #  PAGE CONFIG & CSS
@@ -584,8 +583,6 @@ def run_vision_and_orchestrator(img_bytes, source_label):
     st.session_state.messages.append({"role":"assistant", "content": f"👁️ **Vision Agent:**\n\n{result}"})
 
     st.markdown('<div class="section-title">🧠 Orchestrator — Combined Farm Advisory</div>', unsafe_allow_html=True)
-    with st.spinner("🧠 Waiting 6s before Orchestrator (Gemini rate limit)..."):
-        time.sleep(6)
     with st.spinner("🧠 Orchestrator combining all agent reports..."):
         summary = orchestrator_ai(result, W, S, M, farmer_name, farmer_crop, L["code"])
     st.markdown(f'<div class="agent-card brain"><div class="agent-title">🧠 Master Brain Advisory</div>{summary.replace(chr(10),"<br>")}</div>', unsafe_allow_html=True)
