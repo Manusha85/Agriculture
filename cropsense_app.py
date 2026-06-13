@@ -490,17 +490,6 @@ with st.sidebar:
         st.success(f"✅ {st.session_state.farmer_name} · {st.session_state.village}")
 
     st.markdown("---")
-
-    # API key status
-    api_key = get_api_key()
-    if api_key:
-        st.markdown("🟢 **AI Engine Ready**")
-        st.caption("Claude claude-sonnet-4-6 connected")
-    else:
-        st.error("🔴 API Key Missing")
-        st.caption("Add ANTHROPIC_API_KEY to secrets")
-
-    st.markdown("---")
     st.markdown("**Active Agents:**")
     st.markdown("👁️ Vision Agent — Disease Detection")
     st.markdown("🌤️ Weather Agent — 7-day Forecast")
