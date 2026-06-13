@@ -257,15 +257,17 @@ def vision_agent_ai(image_bytes, farmer_name, village, crop, lang_code):
         resized = image_bytes
 
     prompt = f"""You are the CropSense Vision Agent — expert crop disease diagnostician.
-Farmer: {farmer_name}, Village: {village}, Crop: {crop}. Respond in language: {lang_code}.
+Farmer: {farmer_name}, Village: {village}. Respond in language: {lang_code}.
+
+IMPORTANT: Look at the image carefully and identify the crop YOURSELF from what you see. Do NOT assume it is {crop} — the farmer may have uploaded a different crop photo. Trust your eyes, not the profile.
 
 Analyze this crop image and write a complete structured report:
 
-**1. CROP IDENTIFICATION** — Crop name and growth stage.
-**2. DISEASE / PEST / DEFICIENCY** — Name the exact disease (e.g. Rice Blast, Brown Spot, Bacterial Blight, Early Blight, Leaf Rust). If healthy, say so.
-**3. SEVERITY** — Mild / Moderate / Severe. Estimated % affected.
-**4. ROOT CAUSE** — Fungus / Bacteria / Virus / Pest / Nutrient deficiency. Conditions that caused it.
-**5. IMMEDIATE TREATMENT** — Specific chemical/organic treatment with dosage and steps.
+**1. CROP IDENTIFICATION** — What crop do you actually SEE in the image? Name it and describe growth stage. If it differs from the farmer profile crop ({crop}), mention it.
+**2. DISEASE / PEST / DEFICIENCY** — Look carefully for yellow spots, brown lesions, black spots, white powder, wilting, holes, rot, discoloration. Name the EXACT disease (e.g. Early Blight, Late Blight, Potato Leaf Roll, Brown Spot, Rice Blast, Leaf Rust). If healthy, say "No disease detected".
+**3. SEVERITY** — Mild / Moderate / Severe. Estimated % of plant affected.
+**4. ROOT CAUSE** — Fungus / Bacteria / Virus / Pest / Nutrient deficiency? Explain the cause.
+**5. IMMEDIATE TREATMENT** — Specific chemical or organic treatment with dosage and application steps.
 **6. PREVENTION** — 3 practical tips for next season.
 
 Be specific. Use simple language a farmer can understand."""
